@@ -4,20 +4,35 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <stdint.h>
 
-#define FFT_SIZE (4*1024)
+uint32_t FFT_SIZE=(4*1024);
 
-double sines[FFT_SIZE];
-double cosines[FFT_SIZE];
+double *sines;
+double *cosines;
 
-double din_r[FFT_SIZE];
-double din_i[FFT_SIZE];
+double *din_r;
+double *din_i;
 
-double dout_r[FFT_SIZE];
-double dout_i[FFT_SIZE];
+double *dout_r;
+double *dout_i;
 
-double dout_r_ref[FFT_SIZE];
-double dout_i_ref[FFT_SIZE];
+double *dout_r_ref;
+double *dout_i_ref;
+
+static void init_buf(uint32_t fftsize) {
+	sines = (double *)aligned_alloc(32, fftsize*sizeof(double));
+	cosines = (double *)aligned_alloc(32, fftsize*sizeof(double));
+
+	din_r = (double *)aligned_alloc(32, fftsize*sizeof(double));
+	din_i = (double *)aligned_alloc(32, fftsize*sizeof(double));
+
+	dout_r = (double *)aligned_alloc(32, fftsize*sizeof(double));
+	dout_i = (double *)aligned_alloc(32, fftsize*sizeof(double));
+
+	dout_r_ref = (double *)aligned_alloc(32, fftsize*sizeof(double));
+	dout_i_ref = (double *)aligned_alloc(32, fftsize*sizeof(double));
+}
 
 //=================================================================
 // Save calling sin() and cos() all the time
@@ -177,6 +192,20 @@ int main(int argc, char *argv[]) {
    struct timespec tv_start_fft_v1, tv_end_fft_v1, tv_fft_v1;
    struct timespec tv_start_fft_v2, tv_end_fft_v2, tv_fft_v2;
 
+   if(argc < 3) {
+   		printf("Error: my_fft FFT_SIZE nbcycle");
+   		return -1;
+   }
+
+	uint32_t fftsize = 0;
+	fftsize = atoi(argv[1]);
+	FFT_SIZE = fftsize;
+
+  	uint32_t nbcycle = 0;
+  	nbcycle = atoi(argv[2]);
+
+  	init_buf(fftsize);
+
    // Setup
    for(int i = 0; i < FFT_SIZE; i++) {
 #if 0
@@ -196,29 +225,42 @@ int main(int argc, char *argv[]) {
    printf("=========================================\n");
 
    // The standar DFT implementation
-   clock_gettime(CLOCK_MONOTONIC, &tv_start_dft);  
-   dft(din_r,din_i, dout_r_ref, dout_i_ref, FFT_SIZE,1);
+   clock_gettime(CLOCK_MONOTONIC, &tv_start_dft);
+   //for(uint32_t i = 0; i < nbcycle; i++) {
+   		dft(din_r,din_i, dout_r_ref, dout_i_ref, FFT_SIZE,1);
+	//}
    clock_gettime(CLOCK_MONOTONIC, &tv_end_dft);  
 
    ts_sub(&tv_dft,    &tv_end_dft,    &tv_start_dft);
+   uint64_t dft_time = (unsigned)tv_dft.tv_sec * 1e9 + (unsigned)tv_dft.tv_nsec;
    printf("DFT %u.%09u secs\n",(unsigned)tv_dft.tv_sec, (unsigned)tv_dft.tv_nsec);
+   //printf("DFT %d nsecs\n",dft_time);
 
    // The recursive FFT implementation
-   clock_gettime(CLOCK_MONOTONIC, &tv_start_fft_v1);  
-   fft_v1(din_r,din_i, dout_r,     dout_i, FFT_SIZE, 1);
+   clock_gettime(CLOCK_MONOTONIC, &tv_start_fft_v1);
+   for(uint32_t i = 0; i < nbcycle; i++) {
+   		fft_v1(din_r,din_i, dout_r,     dout_i, FFT_SIZE, 1);
+   }
    clock_gettime(CLOCK_MONOTONIC, &tv_end_fft_v1);  
 
    ts_sub(&tv_fft_v1, &tv_end_fft_v1, &tv_start_fft_v1);
-   printf("FFT recursive %u.%09u secs\n",(unsigned)tv_fft_v1.tv_sec, (unsigned)tv_fft_v1.tv_nsec);
+   // Beware of the valid range
+   uint64_t r_fft_time = ((unsigned)tv_fft_v1.tv_sec * 1e9 + (unsigned)tv_fft_v1.tv_nsec)/nbcycle;
+   printf("FFT recursive %d nsecs\n",r_fft_time);
+
    check_error(dout_r_ref, dout_i_ref, dout_r,dout_i, FFT_SIZE);
 
    // The looping FFT implementation
-   clock_gettime(CLOCK_MONOTONIC, &tv_start_fft_v2);  
-   fft_v2(din_r,din_i, dout_r,     dout_i, FFT_SIZE);
+   clock_gettime(CLOCK_MONOTONIC, &tv_start_fft_v2);
+   for(uint32_t i = 0; i < nbcycle; i++) { 
+   		fft_v2(din_r,din_i, dout_r,     dout_i, FFT_SIZE);
+   }
    clock_gettime(CLOCK_MONOTONIC, &tv_end_fft_v2);  
 
    ts_sub(&tv_fft_v2, &tv_end_fft_v2, &tv_start_fft_v2);
-   printf("FFT looped    %u.%09u secs\n",(unsigned)tv_fft_v2.tv_sec, (unsigned)tv_fft_v2.tv_nsec);
+   uint64_t l_fft_time = ((unsigned)tv_fft_v2.tv_sec * 1e9 + (unsigned)tv_fft_v2.tv_nsec)/nbcycle;
+   printf("FFT looped %d nsecs\n",l_fft_time);
+
    check_error(dout_r_ref, dout_i_ref, dout_r,dout_i, FFT_SIZE);
 
    (void)print_out;  
